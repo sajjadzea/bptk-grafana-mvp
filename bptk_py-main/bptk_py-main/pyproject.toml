@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools >= 65.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bptk-py"
+dynamic = ["version"]
+dependencies = [
+"pandas==2.2.3",
+"matplotlib==3.9.2",
+"scipy==1.14.1",
+"numpy==2.1.2",
+"ipywidgets==8.1.5",
+"xlsxwriter==3.1.9",
+"parsimonious==0.10.0",
+"xmltodict==0.12.0",
+"jinja2==3.1.4",
+"sympy==1.13.3",
+"distlib==0.3.8",
+"cachetools==5.5.0",
+"requests==2.32.0",
+"flask==3.0.3",
+"jsonpickle==3.0.2"
+
+]
+requires-python = ">=3.11"
+authors = [
+  {name = "transentis", email = "support@transentis.com"}
+]
+maintainers = [
+  {name = "transentis", email = "support@transentis.com"}
+]
+description = "A python simulation engine for System Dynamics & Agent based models"
+readme = "README.md"
+keywords = ["system dynamics", "agent based modeling"]
+classifiers = [
+   "Programming Language :: Python :: 3",
+       "License :: OSI Approved :: MIT License",
+          "Operating System :: OS Independent"
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+]
+
+[project.urls]
+Homepage = "https://bptk.transentis.com"
+Documentation = "https://bptk.transentis.com"
+Repository = "https://github.com/transentis/bptk_py"
