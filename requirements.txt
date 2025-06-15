@@ -1,3 +1,4 @@
 bptk-py
 pandas
 grafanalib
+psycopg2-binary
