@@ -4,6 +4,10 @@ import argparse
 import logging
 from pathlib import Path
 import sys
+import os
+
+import pandas as pd
+import psycopg2
 
 # Ensure local BPTK_Py package is discoverable if not installed system-wide
 BASE_DIR = Path(__file__).resolve().parent
@@ -16,6 +20,48 @@ from BPTK_Py.modeling.simultaneousScheduler import SimultaneousScheduler
 from BPTK_Py.sdsimulation import SdSimulation
 
 logger = logging.getLogger(__name__)
+
+
+def store_results_db(df: pd.DataFrame, db_url: str, table: str = "simulation_results") -> None:
+    """Persist simulation results into a Postgres table.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame with simulation output columns ``time``, ``population``, ``births`` and ``deaths``.
+    db_url : str
+        Connection string for Postgres.
+    table : str, optional
+        Name of the destination table, by default "simulation_results".
+    """
+    if not db_url:
+        logger.debug("No database URL provided; skipping DB storage")
+        return
+
+    logger.debug("Connecting to database %s", db_url)
+    try:
+        with psycopg2.connect(db_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    CREATE TABLE IF NOT EXISTS {table} (
+                        time DOUBLE PRECISION,
+                        population DOUBLE PRECISION,
+                        births DOUBLE PRECISION,
+                        deaths DOUBLE PRECISION
+                    )
+                    """
+                )
+
+                insert_query = (
+                    f"INSERT INTO {table} (time, population, births, deaths) VALUES (%s, %s, %s, %s)"
+                )
+                cur.executemany(insert_query, df[["time", "population", "births", "deaths"]].values.tolist())
+            conn.commit()
+        logger.info("Stored %s rows into table %s", len(df), table)
+    except Exception as exc:
+        logger.error("Failed to store results in DB: %s", exc)
+
 
 
 def setup_logging(level: str) -> None:
@@ -80,8 +126,21 @@ def build_model(
     return model
 
 
-def run_simulation(model: Model, results_file: Path) -> None:
-    """Run the simulation and store results to a CSV file."""
+def run_simulation(model: Model, results_file: Path, db_url: str | None = None, table: str = "simulation_results") -> None:
+    """Run the simulation and persist results.
+
+    Parameters
+    ----------
+    model : Model
+        BPTK-Py model instance to execute.
+    results_file : Path
+        Path to CSV output file.
+    db_url : str, optional
+        Database connection string. If provided, results will also be stored in the database.
+    table : str, optional
+        Destination table for database storage.
+    """
+
     logger.info("Starting simulation until t=%s", model.stoptime)
     simulation = SdSimulation(model=model, name=model.name)
 
@@ -93,11 +152,13 @@ def run_simulation(model: Model, results_file: Path) -> None:
     try:
         results_file.parent.mkdir(parents=True, exist_ok=True)
         result_frame.to_csv(results_file)
+        logger.info("Results written to %s", results_file)
     except OSError as err:
         logger.error("Failed to write results: %s", err)
-        return
 
-    logger.info("Results written to %s", results_file)
+    if db_url:
+        store_results_db(result_frame, db_url, table)
+
 
 
 if __name__ == "__main__":
@@ -109,14 +170,31 @@ if __name__ == "__main__":
     parser.add_argument("--birth-rate", type=float, default=0.1, help="constant birth rate")
     parser.add_argument("--death-rate", type=float, default=0.05, help="constant death rate")
     parser.add_argument("--output", type=Path, default=Path("results.csv"), help="CSV file for results")
+    parser.add_argument(
+        "--db-url",
+        default=os.getenv("DB_URL"),
+        help="Postgres connection string. Can also be set via DB_URL environment variable.",
+    )
+    parser.add_argument(
+        "--db-table",
+        default="simulation_results",
+        help="Table name for storing results in Postgres",
+    )
     parser.add_argument("--log-level", default="INFO", help="logging level")
 
     args = parser.parse_args()
 
     try:
         setup_logging(args.log_level)
-        model = build_model(args.start, args.stop, args.dt, args.initial, args.birth_rate, args.death_rate)
-        run_simulation(model, args.output)
+        model = build_model(
+            args.start,
+            args.stop,
+            args.dt,
+            args.initial,
+            args.birth_rate,
+            args.death_rate,
+        )
+        run_simulation(model, args.output, args.db_url, args.db_table)
     except Exception as exc:
         logger.exception("Simulation failed: %s", exc)
         sys.exit(1)
